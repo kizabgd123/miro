@@ -1,11 +1,39 @@
 package telemetry
 
 import (
-	"encoding/binary"
 	"hash/crc32"
 	"math"
 	"time"
 )
+
+// putLE64 writes v in little-endian order to the first eight bytes of b.
+// It panics if len(b) < 8 and may leave b partially written.
+func putLE64(b []byte, v uint64) {
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+	b[4] = byte(v >> 32)
+	b[5] = byte(v >> 40)
+	b[6] = byte(v >> 48)
+	b[7] = byte(v >> 56)
+}
+
+// putLE32 writes v in little-endian order to the first four bytes of b.
+// It panics if len(b) < 4 and may leave b partially written.
+func putLE32(b []byte, v uint32) {
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+}
+
+// putLE16 writes v in little-endian order to the first two bytes of b.
+// It panics if len(b) < 2 and may leave b partially written.
+func putLE16(b []byte, v uint16) {
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+}
 
 // Event types
 const (
@@ -53,15 +81,17 @@ func (e *TelemetryEvent) PayloadString() string {
 }
 
 // ComputeChecksum calculates the CRC32 IEEE checksum of the event's data fields.
-// It formats bytes into a stack-allocated buffer to guarantee zero heap allocations.
+// Numeric fields use little-endian encoding. All MaxPayloadSize bytes of Payload
+// and PayloadLen are included, even bytes beyond the active payload length.
+// Checksum is excluded, and the event is not modified. It panics if e is nil.
 func (e *TelemetryEvent) ComputeChecksum() uint32 {
 	var buf [31 + MaxPayloadSize]byte // 8 + 4 + 8 + 2 + 8 + 48 + 1 = 79 bytes
 
-	binary.LittleEndian.PutUint64(buf[0:8], uint64(e.Timestamp))
-	binary.LittleEndian.PutUint32(buf[8:12], e.ProducerID)
-	binary.LittleEndian.PutUint64(buf[12:20], e.Sequence)
-	binary.LittleEndian.PutUint16(buf[20:22], e.Type)
-	binary.LittleEndian.PutUint64(buf[22:30], math.Float64bits(e.Value))
+	putLE64(buf[0:8], uint64(e.Timestamp))
+	putLE32(buf[8:12], e.ProducerID)
+	putLE64(buf[12:20], e.Sequence)
+	putLE16(buf[20:22], e.Type)
+	putLE64(buf[22:30], math.Float64bits(e.Value))
 	copy(buf[30:30+MaxPayloadSize], e.Payload[:])
 	buf[30+MaxPayloadSize] = e.PayloadLen
 
